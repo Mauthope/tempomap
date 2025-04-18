@@ -13,6 +13,7 @@
     #video { max-width: 100%; height: auto; }
     .controls { margin-top: 10px; display: flex; flex-direction: column; align-items: center; }
     .area-label { position: absolute; background: rgba(0,0,0,0.5); color: white; padding: 2px 4px; font-size: 12px; pointer-events: none; }
+    #clear-areas, #start-detection { margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -21,9 +22,11 @@
     <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
     <button onclick="loadVideoFromUrl()">Carregar por URL</button>
     <button onclick="startCamera()">Usar Câmera</button>
+    <button id="start-detection" onclick="playVideo()">Iniciar Detecção</button>
+    <button id="clear-areas" onclick="clearAreas()">Excluir Zonas</button>
   </div>
   <div id="video-container">
-    <video id="video" autoplay muted></video>
+    <video id="video" muted></video>
     <canvas id="canvas"></canvas>
   </div>
   <script>
@@ -35,7 +38,6 @@
     let drawing = false;
     let areas = JSON.parse(localStorage.getItem("areas") || "[]");
     let startX, startY;
-    let timers = {};
 
     const resizeCanvas = () => {
       canvas.width = video.clientWidth;
@@ -49,13 +51,31 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = "lime";
       ctx.lineWidth = 2;
-      ctx.font = "12px Arial";
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.font = "bold 14px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
       areas.forEach(area => {
         ctx.strokeRect(area.x, area.y, area.w, area.h);
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillText(area.name, area.x + 4, area.y + 14);
+
+        const centerX = area.x + area.w / 2;
+        const centerY = area.y + area.h / 2;
+
+        const elapsed = area.active ? ((Date.now() - area.lastStart) / 1000 + area.time) : area.time;
+        const label = `${area.name}: ${elapsed.toFixed(1)}s`;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.fillRect(centerX - 50, centerY - 12, 100, 24);
+
+        ctx.fillStyle = "white";
+        ctx.fillText(label, centerX, centerY);
       });
+    };
+
+    const clearAreas = () => {
+      areas = [];
+      localStorage.removeItem("areas");
+      drawAreas();
     };
 
     canvas.addEventListener("pointerdown", e => {
@@ -72,6 +92,7 @@
       const endX = e.clientX - rect.left;
       const endY = e.clientY - rect.top;
       const name = prompt("Nome da área:");
+      if (!name) return;
       const newArea = {
         name,
         x: Math.min(startX, endX),
@@ -142,7 +163,7 @@
             area.active = false;
             area.time += (now - area.lastStart) / 1000;
             area.lastStart = null;
-            console.log(`Área '${area.name}' - Tempo: ${area.time.toFixed(1)}s`);
+            localStorage.setItem("areas", JSON.stringify(areas));
           }
         }
       });
@@ -151,9 +172,17 @@
       requestAnimationFrame(detectPeople);
     };
 
+    const playVideo = () => {
+      video.play().then(() => {
+        requestAnimationFrame(detectPeople);
+      }).catch(error => {
+        console.error("Erro ao tentar reproduzir o vídeo:", error);
+      });
+    };
+
     cocoSsd.load().then(m => {
       model = m;
-      requestAnimationFrame(detectPeople);
+      console.log("Modelo carregado");
     });
   </script>
 </body>
