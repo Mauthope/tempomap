@@ -9,11 +9,12 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
     #video-container { position: relative; display: flex; flex-direction: column; align-items: center; }
-    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; }
-    #video { max-width: 100%; height: auto; }
+    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; z-index: 2; }
+    #video { max-width: 100%; height: auto; z-index: 1; }
     .controls { margin-top: 10px; display: flex; flex-direction: column; align-items: center; }
     .area-label { position: absolute; background: rgba(0,0,0,0.5); color: white; padding: 2px 4px; font-size: 12px; pointer-events: none; }
-    #clear-areas, #start-detection { margin-top: 10px; }
+    .timer { color: white; font-size: 14px; position: absolute; background: rgba(0,0,0,0.6); padding: 2px 5px; border-radius: 3px; }
+    #clear-areas, #export-data { margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -22,11 +23,11 @@
     <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
     <button onclick="loadVideoFromUrl()">Carregar por URL</button>
     <button onclick="startCamera()">Usar Câmera</button>
-    <button id="start-detection" onclick="playVideo()">Iniciar Detecção</button>
     <button id="clear-areas" onclick="clearAreas()">Excluir Zonas</button>
+    <button id="export-data" onclick="exportToCSV()">Exportar CSV</button>
   </div>
   <div id="video-container">
-    <video id="video" muted></video>
+    <video id="video" autoplay muted></video>
     <canvas id="canvas"></canvas>
   </div>
   <script>
@@ -36,8 +37,12 @@
 
     let model;
     let drawing = false;
-    let areas = JSON.parse(localStorage.getItem("areas") || "[]");
+    let resizing = false;
+    let moving = false;
+    let selectedArea = null;
+    let offsetX, offsetY;
     let startX, startY;
+    let areas = JSON.parse(localStorage.getItem("areas") || "[]");
 
     const resizeCanvas = () => {
       canvas.width = video.clientWidth;
@@ -51,24 +56,17 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = "lime";
       ctx.lineWidth = 2;
-      ctx.font = "bold 14px Arial";
+      ctx.font = "14px Arial";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
       areas.forEach(area => {
         ctx.strokeRect(area.x, area.y, area.w, area.h);
-
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        const elapsed = area.active ? ((Date.now() - area.lastStart) / 1000 + area.time) : area.time;
         const centerX = area.x + area.w / 2;
         const centerY = area.y + area.h / 2;
-
-        const elapsed = area.active ? ((Date.now() - area.lastStart) / 1000 + area.time) : area.time;
-        const label = `${area.name}: ${elapsed.toFixed(1)}s`;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.fillRect(centerX - 50, centerY - 12, 100, 24);
-
+        ctx.fillRect(centerX - 30, centerY - 12, 60, 24);
         ctx.fillStyle = "white";
-        ctx.fillText(label, centerX, centerY);
+        ctx.fillText(`${area.name}: ${elapsed.toFixed(1)}s`, centerX, centerY + 5);
       });
     };
 
@@ -79,33 +77,68 @@
     };
 
     canvas.addEventListener("pointerdown", e => {
-      drawing = true;
       const rect = canvas.getBoundingClientRect();
-      startX = e.clientX - rect.left;
-      startY = e.clientY - rect.top;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      selectedArea = areas.find(a => x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h);
+
+      if (selectedArea) {
+        moving = true;
+        offsetX = x - selectedArea.x;
+        offsetY = y - selectedArea.y;
+      } else {
+        drawing = true;
+        startX = x;
+        startY = y;
+      }
+    });
+
+    canvas.addEventListener("pointermove", e => {
+      if (!drawing && !moving) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (moving && selectedArea) {
+        selectedArea.x = x - offsetX;
+        selectedArea.y = y - offsetY;
+        drawAreas();
+      } else if (drawing) {
+        drawAreas();
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, x - startX, y - startY);
+      }
     });
 
     canvas.addEventListener("pointerup", e => {
-      if (!drawing) return;
-      drawing = false;
       const rect = canvas.getBoundingClientRect();
       const endX = e.clientX - rect.left;
       const endY = e.clientY - rect.top;
-      const name = prompt("Nome da área:");
-      if (!name) return;
-      const newArea = {
-        name,
-        x: Math.min(startX, endX),
-        y: Math.min(startY, endY),
-        w: Math.abs(startX - endX),
-        h: Math.abs(startY - endY),
-        active: false,
-        time: 0,
-        lastStart: null,
-      };
-      areas.push(newArea);
-      localStorage.setItem("areas", JSON.stringify(areas));
-      drawAreas();
+
+      if (drawing) {
+        drawing = false;
+        const name = prompt("Nome da área:");
+        if (!name) return;
+        const newArea = {
+          name,
+          x: Math.min(startX, endX),
+          y: Math.min(startY, endY),
+          w: Math.abs(startX - endX),
+          h: Math.abs(startY - endY),
+          active: false,
+          time: 0,
+          lastStart: null,
+        };
+        areas.push(newArea);
+        localStorage.setItem("areas", JSON.stringify(areas));
+        drawAreas();
+      }
+
+      if (moving) {
+        moving = false;
+        localStorage.setItem("areas", JSON.stringify(areas));
+      }
     });
 
     document.getElementById("upload").addEventListener("change", e => {
@@ -143,7 +176,7 @@
         const scaleY = canvas.height / video.videoHeight;
 
         const someoneInside = predictions.some(p => {
-          if (p.class === "person") {
+          if (p.class === "person" && p.score > 0.6) {
             const centerX = p.bbox[0] + p.bbox[2] / 2;
             const centerY = p.bbox[1] + p.bbox[3] / 2;
             const sx = centerX * scaleX;
@@ -172,17 +205,22 @@
       requestAnimationFrame(detectPeople);
     };
 
-    const playVideo = () => {
-      video.play().then(() => {
-        requestAnimationFrame(detectPeople);
-      }).catch(error => {
-        console.error("Erro ao tentar reproduzir o vídeo:", error);
-      });
+    const exportToCSV = () => {
+      const now = new Date().toLocaleString();
+      const csvContent = "data:text/csv;charset=utf-8,Area,Tempo (s),Data/Hora\n" +
+        areas.map(a => `${a.name},${(a.active ? ((Date.now() - a.lastStart) / 1000 + a.time) : a.time).toFixed(1)},${now}`).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "tempos_areas.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     };
 
     cocoSsd.load().then(m => {
       model = m;
-      console.log("Modelo carregado");
+      requestAnimationFrame(detectPeople);
     });
   </script>
 </body>
