@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Detecção de Pessoas por Zona</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    #container { position: relative; width: 100%; max-width: 800px; margin: auto; }
+    canvas, video {
+      width: 100%;
+      height: auto;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #controls {
+      margin: 10px auto;
+      text-align: center;
+    }
+    #zonasList {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="controls">
+  <input type="file" id="videoUpload" accept="video/*">
+  <button onclick="clearZones()">Limpar Zonas</button>
+</div>
+
+<div id="container">
+  <video id="video" autoplay muted loop></video>
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="zonasList"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const zonas = [];
+  const zonasTimers = {};
+  let model;
+
+  // Resize canvas com vídeo
+  function resizeCanvas() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  }
+
+  // Upload do vídeo
+  document.getElementById('videoUpload').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.play();
+      video.addEventListener('loadedmetadata', resizeCanvas);
+    }
+  });
+
+  // Criar zonas desenhando com mouse
+  let startX, startY, isDrawing = false;
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    startX = e.clientX - rect.left;
+    startY = e.clientY - rect.top;
+    isDrawing = true;
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    if (!isDrawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const endX = e.clientX - rect.left;
+    const endY = e.clientY - rect.top;
+    const name = prompt("Nome da zona:");
+    if (name) {
+      const zone = {
+        name,
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        w: Math.abs(endX - startX),
+        h: Math.abs(endY - startY),
+        time: 0,
+        active: false,
+      };
+      zonas.push(zone);
+      saveZones();
+      updateZonasList();
+    }
+    isDrawing = false;
+  });
+
+  function saveZones() {
+    localStorage.setItem('zonas', JSON.stringify(zonas));
+  }
+
+  function loadZones() {
+    const data = localStorage.getItem('zonas');
+    if (data) {
+      zonas.push(...JSON.parse(data));
+      updateZonasList();
+    }
+  }
+
+  function clearZones() {
+    zonas.length = 0;
+    localStorage.removeItem('zonas');
+    updateZonasList();
+  }
+
+  function updateZonasList() {
+    const div = document.getElementById('zonasList');
+    div.innerHTML = '<strong>Zonas:</strong><br>' + zonas.map(z =>
+      `${z.name}: ${formatTime(z.time)}`
+    ).join('<br>');
+  }
+
+  function formatTime(s) {
+    const min = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  function pointInRect(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  }
+
+  async function detectFrame() {
+    const predictions = await model.detect(video);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (const zone of zonas) {
+      ctx.strokeStyle = 'yellow';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+      ctx.fillStyle = 'black';
+      ctx.fillText(zone.name, zone.x + 4, zone.y + 12);
+    }
+
+    const people = predictions.filter(p => p.class === 'person' && p.score > 0.6);
+
+    zonas.forEach(zone => {
+      const found = people.some(p => {
+        const px = p.bbox[0] + p.bbox[2]/2;
+        const py = p.bbox[1] + p.bbox[3]/2;
+        return pointInRect(px, py, zone);
+      });
+
+      if (found) {
+        if (!zone.active) {
+          zone.active = true;
+          zonasTimers[zone.name] = setInterval(() => {
+            zone.time++;
+            updateZonasList();
+            saveZones();
+          }, 1000);
+        }
+      } else {
+        if (zone.active) {
+          clearInterval(zonasTimers[zone.name]);
+          zone.active = false;
+        }
+      }
+    });
+
+    requestAnimationFrame(detectFrame);
+  }
+
+  async function main() {
+    model = await cocoSsd.load();
+    loadZones();
+    if (!video.src) {
+      video.src = 'https://www.w3schools.com/html/mov_bbb.mp4'; // vídeo exemplo
+      video.loop = true;
+      video.muted = true;
+      video.play();
+      video.addEventListener('loadedmetadata', resizeCanvas);
+    }
+    detectFrame();
+  }
+
+  main();
+</script>
+</body>
+</html>
