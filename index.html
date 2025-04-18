@@ -25,6 +25,7 @@
     <button onclick="startCamera()">Usar Câmera</button>
     <button id="clear-areas" onclick="clearAreas()">Excluir Zonas</button>
     <button id="export-data" onclick="exportToCSV()">Exportar CSV</button>
+    <button onclick="resetTimers()">Resetar Temporizadores</button>
   </div>
   <div id="video-container">
     <video id="video" autoplay muted></video>
@@ -73,6 +74,15 @@
     const clearAreas = () => {
       areas = [];
       localStorage.removeItem("areas");
+      drawAreas();
+    };
+
+    const resetTimers = () => {
+      areas.forEach(area => {
+        area.time = 0;
+        area.lastStart = area.active ? Date.now() : null;
+      });
+      localStorage.setItem("areas", JSON.stringify(areas));
       drawAreas();
     };
 
