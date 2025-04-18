@@ -1,38 +1,58 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Detecção de Pessoas por Zona</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    #container { position: relative; width: 100%; max-width: 800px; margin: auto; }
-    canvas, video {
+    body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f9f9f9; }
+    #container { position: relative; max-width: 800px; margin: auto; }
+    video, canvas {
       width: 100%;
-      height: auto;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #videoWrapper {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%; /* 16:9 ratio */
+    }
+    video, canvas {
       position: absolute;
       top: 0;
       left: 0;
     }
     #controls {
-      margin: 10px auto;
+      margin-bottom: 10px;
       text-align: center;
     }
     #zonasList {
-      margin-top: 10px;
       font-size: 14px;
+      margin-top: 10px;
+    }
+    #urlInput {
+      width: 60%;
+      padding: 4px;
     }
   </style>
 </head>
 <body>
 
 <div id="controls">
-  <input type="file" id="videoUpload" accept="video/*">
-  <button onclick="clearZones()">Limpar Zonas</button>
+  <button onclick="loadFromPC()">📁 Vídeo do PC</button>
+  <button onclick="loadFromURL()">🌐 Link da Web</button>
+  <button onclick="loadFromCam()">📷 Câmera Ao Vivo</button><br><br>
+  <input type="file" id="fileInput" accept="video/*" style="display: none;">
+  <input type="text" id="urlInput" placeholder="Cole aqui a URL do vídeo" />
+  <button onclick="setVideoFromURL()">Carregar</button><br><br>
+  <button onclick="clearZones()">🧹 Limpar Zonas</button>
 </div>
 
 <div id="container">
-  <video id="video" autoplay muted loop></video>
-  <canvas id="canvas"></canvas>
+  <div id="videoWrapper">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
 </div>
 
 <div id="zonasList"></div>
@@ -47,25 +67,54 @@
   const zonasTimers = {};
   let model;
 
-  // Resize canvas com vídeo
+  let startX, startY, isDrawing = false;
+
   function resizeCanvas() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
   }
 
-  // Upload do vídeo
-  document.getElementById('videoUpload').addEventListener('change', (e) => {
+  // Escolha da fonte
+  function loadFromPC() {
+    document.getElementById('fileInput').click();
+  }
+
+  document.getElementById('fileInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      video.src = url;
+      video.srcObject = null;
+      video.src = URL.createObjectURL(file);
       video.play();
       video.addEventListener('loadedmetadata', resizeCanvas);
     }
   });
 
-  // Criar zonas desenhando com mouse
-  let startX, startY, isDrawing = false;
+  function loadFromURL() {
+    document.getElementById('urlInput').focus();
+  }
+
+  function setVideoFromURL() {
+    const url = document.getElementById('urlInput').value;
+    if (url) {
+      video.srcObject = null;
+      video.src = url;
+      video.play();
+      video.addEventListener('loadedmetadata', resizeCanvas);
+    }
+  }
+
+  async function loadFromCam() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      video.play();
+      video.addEventListener('loadedmetadata', resizeCanvas);
+    } catch (err) {
+      alert("Erro ao acessar a câmera: " + err.message);
+    }
+  }
+
+  // Desenho das zonas
   canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
     startX = e.clientX - rect.left;
@@ -96,6 +145,17 @@
     isDrawing = false;
   });
 
+  function pointInRect(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  }
+
+  function updateZonasList() {
+    const div = document.getElementById('zonasList');
+    div.innerHTML = '<strong>Zonas Monitoradas:</strong><br>' + zonas.map(z =>
+      `${z.name}: ${formatTime(z.time)}`
+    ).join('<br>');
+  }
+
   function saveZones() {
     localStorage.setItem('zonas', JSON.stringify(zonas));
   }
@@ -114,60 +174,49 @@
     updateZonasList();
   }
 
-  function updateZonasList() {
-    const div = document.getElementById('zonasList');
-    div.innerHTML = '<strong>Zonas:</strong><br>' + zonas.map(z =>
-      `${z.name}: ${formatTime(z.time)}`
-    ).join('<br>');
-  }
-
   function formatTime(s) {
     const min = Math.floor(s / 60);
     const sec = s % 60;
     return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   }
 
-  function pointInRect(x, y, rect) {
-    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-  }
-
   async function detectFrame() {
-    const predictions = await model.detect(video);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (video.readyState === 4) {
+      const predictions = await model.detect(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (const zone of zonas) {
-      ctx.strokeStyle = 'yellow';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
-      ctx.fillStyle = 'black';
-      ctx.fillText(zone.name, zone.x + 4, zone.y + 12);
-    }
+      for (const zone of zonas) {
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+        ctx.fillStyle = 'rgba(255,0,0,0.2)';
+        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+        ctx.fillStyle = 'black';
+        ctx.fillText(zone.name, zone.x + 4, zone.y + 12);
+      }
 
-    const people = predictions.filter(p => p.class === 'person' && p.score > 0.6);
+      const people = predictions.filter(p => p.class === 'person' && p.score > 0.6);
 
-    zonas.forEach(zone => {
-      const found = people.some(p => {
-        const px = p.bbox[0] + p.bbox[2]/2;
-        const py = p.bbox[1] + p.bbox[3]/2;
-        return pointInRect(px, py, zone);
-      });
+      zonas.forEach(zone => {
+        const found = people.some(p => {
+          const px = p.bbox[0] + p.bbox[2]/2;
+          const py = p.bbox[1] + p.bbox[3]/2;
+          return pointInRect(px, py, zone);
+        });
 
-      if (found) {
-        if (!zone.active) {
+        if (found && !zone.active) {
           zone.active = true;
           zonasTimers[zone.name] = setInterval(() => {
             zone.time++;
             updateZonasList();
             saveZones();
           }, 1000);
-        }
-      } else {
-        if (zone.active) {
+        } else if (!found && zone.active) {
           clearInterval(zonasTimers[zone.name]);
           zone.active = false;
         }
-      }
-    });
+      });
+    }
 
     requestAnimationFrame(detectFrame);
   }
@@ -175,13 +224,6 @@
   async function main() {
     model = await cocoSsd.load();
     loadZones();
-    if (!video.src) {
-      video.src = 'https://www.w3schools.com/html/mov_bbb.mp4'; // vídeo exemplo
-      video.loop = true;
-      video.muted = true;
-      video.play();
-      video.addEventListener('loadedmetadata', resizeCanvas);
-    }
     detectFrame();
   }
 
