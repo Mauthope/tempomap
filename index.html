@@ -1,198 +1,160 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Detector de Presença em Áreas</title>
+  <title>Detecção de Pessoas em Áreas</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-    #video-container {
-      position: relative;
-      width: 100%;
-      height: 60vh;
-      background: #000;
-    }
-    #videoElement, #canvasOverlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
-    #controls {
-      padding: 10px;
-    }
-    .area-label {
-      position: absolute;
-      color: white;
-      background: rgba(0,0,0,0.5);
-      padding: 2px 6px;
-      font-size: 14px;
-      border-radius: 4px;
-    }
-    .timer {
-      font-size: 16px;
-      margin: 5px 0;
-    }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    #video-container { position: relative; display: flex; flex-direction: column; align-items: center; }
+    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; }
+    #video { max-width: 100%; height: auto; }
+    .controls { margin-top: 10px; display: flex; flex-direction: column; align-items: center; }
+    .area-label { position: absolute; background: rgba(0,0,0,0.5); color: white; padding: 2px 4px; font-size: 12px; pointer-events: none; }
   </style>
 </head>
 <body>
-  <div id="video-container">
-    <video id="videoElement" autoplay muted></video>
-    <canvas id="canvasOverlay"></canvas>
-  </div>
-
-  <div id="controls">
-    <input type="file" accept="video/*" id="videoFile" />
-    <input type="text" id="videoURL" placeholder="URL do vídeo (.mp4)" />
-    <button onclick="loadVideoFromURL()">Carregar Vídeo da Web</button>
+  <div class="controls">
+    <input type="file" accept="video/*" id="upload" />
+    <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
+    <button onclick="loadVideoFromUrl()">Carregar por URL</button>
     <button onclick="startCamera()">Usar Câmera</button>
-    <div id="timers"></div>
   </div>
-
+  <div id="video-container">
+    <video id="video" autoplay muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
   <script>
-    const video = document.getElementById('videoElement');
-    const canvas = document.getElementById('canvasOverlay');
-    const ctx = canvas.getContext('2d');
-    const videoFileInput = document.getElementById('videoFile');
-    const videoURLInput = document.getElementById('videoURL');
-    const timersDiv = document.getElementById('timers');
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-    let areas = JSON.parse(localStorage.getItem('areas')) || [];
+    let model;
     let drawing = false;
+    let areas = JSON.parse(localStorage.getItem("areas") || "[]");
     let startX, startY;
+    let timers = {};
 
-    function resizeCanvas() {
+    const resizeCanvas = () => {
       canvas.width = video.clientWidth;
       canvas.height = video.clientHeight;
-      drawAreas();
-    }
+    };
 
-    function drawAreas() {
+    window.addEventListener("resize", resizeCanvas);
+    video.addEventListener("loadeddata", resizeCanvas);
+
+    const drawAreas = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "lime";
+      ctx.lineWidth = 2;
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
       areas.forEach(area => {
-        ctx.strokeStyle = 'lime';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(area.x, area.y, area.width, area.height);
-        ctx.font = '14px Arial';
-        ctx.fillStyle = 'lime';
-        ctx.fillText(area.name, area.x + 4, area.y + 16);
+        ctx.strokeRect(area.x, area.y, area.w, area.h);
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillText(area.name, area.x + 4, area.y + 14);
       });
-    }
+    };
 
-    function addArea(x, y, width, height) {
-      const name = prompt('Nome da área:');
-      if (!name) return;
-      const area = { name, x, y, width, height };
-      areas.push(area);
-      localStorage.setItem('areas', JSON.stringify(areas));
-      drawAreas();
-      createTimer(name);
-    }
-
-    function createTimer(name) {
-      const el = document.createElement('div');
-      el.className = 'timer';
-      el.id = `timer-${name}`;
-      el.textContent = `${name}: 00:00:00`;
-      timersDiv.appendChild(el);
-
-      let seconds = 0;
-      setInterval(() => {
-        // Simulação de detecção — substitua por lógica real de IA no futuro
-        const detect = Math.random() > 0.99; // aleatório apenas para simular
-        if (detect) seconds++;
-
-        const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
-        const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-        const s = String(seconds % 60).padStart(2, '0');
-        el.textContent = `${name}: ${h}:${m}:${s}`;
-      }, 1000);
-    }
-
-    canvas.addEventListener('mousedown', e => {
+    canvas.addEventListener("pointerdown", e => {
       drawing = true;
       const rect = canvas.getBoundingClientRect();
       startX = e.clientX - rect.left;
       startY = e.clientY - rect.top;
     });
 
-    canvas.addEventListener('mouseup', e => {
+    canvas.addEventListener("pointerup", e => {
       if (!drawing) return;
+      drawing = false;
       const rect = canvas.getBoundingClientRect();
       const endX = e.clientX - rect.left;
       const endY = e.clientY - rect.top;
-      drawing = false;
-      const x = Math.min(startX, endX);
-      const y = Math.min(startY, endY);
-      const width = Math.abs(endX - startX);
-      const height = Math.abs(endY - startY);
-      if (width > 10 && height > 10) addArea(x, y, width, height);
+      const name = prompt("Nome da área:");
+      const newArea = {
+        name,
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        w: Math.abs(startX - endX),
+        h: Math.abs(startY - endY),
+        active: false,
+        time: 0,
+        lastStart: null,
+      };
+      areas.push(newArea);
+      localStorage.setItem("areas", JSON.stringify(areas));
+      drawAreas();
     });
 
-    // Touch support
-    canvas.addEventListener('touchstart', e => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      startX = touch.clientX - rect.left;
-      startY = touch.clientY - rect.top;
-      drawing = true;
-    });
-
-    canvas.addEventListener('touchend', e => {
-      e.preventDefault();
-      if (!drawing) return;
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.changedTouches[0];
-      const endX = touch.clientX - rect.left;
-      const endY = touch.clientY - rect.top;
-      drawing = false;
-      const x = Math.min(startX, endX);
-      const y = Math.min(startY, endY);
-      const width = Math.abs(endX - startX);
-      const height = Math.abs(endY - startY);
-      if (width > 10 && height > 10) addArea(x, y, width, height);
-    });
-
-    window.addEventListener('resize', resizeCanvas);
-    video.addEventListener('loadedmetadata', resizeCanvas);
-    videoFileInput.addEventListener('change', e => {
+    document.getElementById("upload").addEventListener("change", e => {
       const file = e.target.files[0];
       if (file) {
-        video.src = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
+        video.src = url;
       }
     });
 
-    function loadVideoFromURL() {
-      const url = videoURLInput.value.trim();
-      if (url && url.endsWith('.mp4')) {
+    const loadVideoFromUrl = () => {
+      const url = document.getElementById("video-url").value;
+      if (url.endsWith(".mp4")) {
         video.src = url;
       } else {
-        alert('Insira uma URL direta para um vídeo .mp4');
+        alert("Somente URLs diretas de arquivos .mp4 são suportadas.");
       }
-    }
-
-    function startCamera() {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-          video.srcObject = stream;
-        })
-        .catch(err => alert('Erro ao acessar a câmera: ' + err));
-    }
-
-    // Inicializar áreas existentes
-    window.onload = () => {
-      if (video.readyState >= 1) resizeCanvas();
-      else video.addEventListener('loadedmetadata', resizeCanvas);
-      areas.forEach(area => createTimer(area.name));
     };
+
+    const startCamera = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+    };
+
+    const isInside = (px, py, area) =>
+      px >= area.x && px <= area.x + area.w && py >= area.y && py <= area.y + area.h;
+
+    const detectPeople = async () => {
+      if (!model || video.readyState !== 4) return requestAnimationFrame(detectPeople);
+      const predictions = await model.detect(video);
+      const now = Date.now();
+
+      areas.forEach(area => {
+        const scaleX = canvas.width / video.videoWidth;
+        const scaleY = canvas.height / video.videoHeight;
+
+        const someoneInside = predictions.some(p => {
+          if (p.class === "person") {
+            const centerX = p.bbox[0] + p.bbox[2] / 2;
+            const centerY = p.bbox[1] + p.bbox[3] / 2;
+            const sx = centerX * scaleX;
+            const sy = centerY * scaleY;
+            return isInside(sx, sy, area);
+          }
+          return false;
+        });
+
+        if (someoneInside) {
+          if (!area.active) {
+            area.active = true;
+            area.lastStart = now;
+          }
+        } else {
+          if (area.active) {
+            area.active = false;
+            area.time += (now - area.lastStart) / 1000;
+            area.lastStart = null;
+            console.log(`Área '${area.name}' - Tempo: ${area.time.toFixed(1)}s`);
+          }
+        }
+      });
+
+      drawAreas();
+      requestAnimationFrame(detectPeople);
+    };
+
+    cocoSsd.load().then(m => {
+      model = m;
+      requestAnimationFrame(detectPeople);
+    });
   </script>
 </body>
 </html>
