@@ -1,233 +1,198 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Detecção de Pessoas por Zona</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detector de Presença em Áreas</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f9f9f9; }
-    #container { position: relative; max-width: 800px; margin: auto; }
-    video, canvas {
-      width: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
     }
-    #videoWrapper {
+    #video-container {
       position: relative;
       width: 100%;
-      padding-top: 56.25%; /* 16:9 ratio */
+      height: 60vh;
+      background: #000;
     }
-    video, canvas {
+    #videoElement, #canvasOverlay {
       position: absolute;
       top: 0;
       left: 0;
+      width: 100%;
+      height: 100%;
     }
     #controls {
-      margin-bottom: 10px;
-      text-align: center;
+      padding: 10px;
     }
-    #zonasList {
+    .area-label {
+      position: absolute;
+      color: white;
+      background: rgba(0,0,0,0.5);
+      padding: 2px 6px;
       font-size: 14px;
-      margin-top: 10px;
+      border-radius: 4px;
     }
-    #urlInput {
-      width: 60%;
-      padding: 4px;
+    .timer {
+      font-size: 16px;
+      margin: 5px 0;
     }
   </style>
 </head>
 <body>
-
-<div id="controls">
-  <button onclick="loadFromPC()">📁 Vídeo do PC</button>
-  <button onclick="loadFromURL()">🌐 Link da Web</button>
-  <button onclick="loadFromCam()">📷 Câmera Ao Vivo</button><br><br>
-  <input type="file" id="fileInput" accept="video/*" style="display: none;">
-  <input type="text" id="urlInput" placeholder="Cole aqui a URL do vídeo" />
-  <button onclick="setVideoFromURL()">Carregar</button><br><br>
-  <button onclick="clearZones()">🧹 Limpar Zonas</button>
-</div>
-
-<div id="container">
-  <div id="videoWrapper">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="canvas"></canvas>
+  <div id="video-container">
+    <video id="videoElement" autoplay muted></video>
+    <canvas id="canvasOverlay"></canvas>
   </div>
-</div>
 
-<div id="zonasList"></div>
+  <div id="controls">
+    <input type="file" accept="video/*" id="videoFile" />
+    <input type="text" id="videoURL" placeholder="URL do vídeo (.mp4)" />
+    <button onclick="loadVideoFromURL()">Carregar Vídeo da Web</button>
+    <button onclick="startCamera()">Usar Câmera</button>
+    <div id="timers"></div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-<script>
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const zonas = [];
-  const zonasTimers = {};
-  let model;
+  <script>
+    const video = document.getElementById('videoElement');
+    const canvas = document.getElementById('canvasOverlay');
+    const ctx = canvas.getContext('2d');
+    const videoFileInput = document.getElementById('videoFile');
+    const videoURLInput = document.getElementById('videoURL');
+    const timersDiv = document.getElementById('timers');
 
-  let startX, startY, isDrawing = false;
+    let areas = JSON.parse(localStorage.getItem('areas')) || [];
+    let drawing = false;
+    let startX, startY;
 
-  function resizeCanvas() {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-  }
-
-  // Escolha da fonte
-  function loadFromPC() {
-    document.getElementById('fileInput').click();
-  }
-
-  document.getElementById('fileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      video.srcObject = null;
-      video.src = URL.createObjectURL(file);
-      video.play();
-      video.addEventListener('loadedmetadata', resizeCanvas);
+    function resizeCanvas() {
+      canvas.width = video.clientWidth;
+      canvas.height = video.clientHeight;
+      drawAreas();
     }
-  });
 
-  function loadFromURL() {
-    document.getElementById('urlInput').focus();
-  }
-
-  function setVideoFromURL() {
-    const url = document.getElementById('urlInput').value;
-    if (url) {
-      video.srcObject = null;
-      video.src = url;
-      video.play();
-      video.addEventListener('loadedmetadata', resizeCanvas);
-    }
-  }
-
-  async function loadFromCam() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      video.play();
-      video.addEventListener('loadedmetadata', resizeCanvas);
-    } catch (err) {
-      alert("Erro ao acessar a câmera: " + err.message);
-    }
-  }
-
-  // Desenho das zonas
-  canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    startX = e.clientX - rect.left;
-    startY = e.clientY - rect.top;
-    isDrawing = true;
-  });
-
-  canvas.addEventListener('mouseup', (e) => {
-    if (!isDrawing) return;
-    const rect = canvas.getBoundingClientRect();
-    const endX = e.clientX - rect.left;
-    const endY = e.clientY - rect.top;
-    const name = prompt("Nome da zona:");
-    if (name) {
-      const zone = {
-        name,
-        x: Math.min(startX, endX),
-        y: Math.min(startY, endY),
-        w: Math.abs(endX - startX),
-        h: Math.abs(endY - startY),
-        time: 0,
-        active: false,
-      };
-      zonas.push(zone);
-      saveZones();
-      updateZonasList();
-    }
-    isDrawing = false;
-  });
-
-  function pointInRect(x, y, rect) {
-    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-  }
-
-  function updateZonasList() {
-    const div = document.getElementById('zonasList');
-    div.innerHTML = '<strong>Zonas Monitoradas:</strong><br>' + zonas.map(z =>
-      `${z.name}: ${formatTime(z.time)}`
-    ).join('<br>');
-  }
-
-  function saveZones() {
-    localStorage.setItem('zonas', JSON.stringify(zonas));
-  }
-
-  function loadZones() {
-    const data = localStorage.getItem('zonas');
-    if (data) {
-      zonas.push(...JSON.parse(data));
-      updateZonasList();
-    }
-  }
-
-  function clearZones() {
-    zonas.length = 0;
-    localStorage.removeItem('zonas');
-    updateZonasList();
-  }
-
-  function formatTime(s) {
-    const min = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-  }
-
-  async function detectFrame() {
-    if (video.readyState === 4) {
-      const predictions = await model.detect(video);
+    function drawAreas() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      for (const zone of zonas) {
-        ctx.strokeStyle = 'red';
+      areas.forEach(area => {
+        ctx.strokeStyle = 'lime';
         ctx.lineWidth = 2;
-        ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
-        ctx.fillStyle = 'rgba(255,0,0,0.2)';
-        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
-        ctx.fillStyle = 'black';
-        ctx.fillText(zone.name, zone.x + 4, zone.y + 12);
-      }
-
-      const people = predictions.filter(p => p.class === 'person' && p.score > 0.6);
-
-      zonas.forEach(zone => {
-        const found = people.some(p => {
-          const px = p.bbox[0] + p.bbox[2]/2;
-          const py = p.bbox[1] + p.bbox[3]/2;
-          return pointInRect(px, py, zone);
-        });
-
-        if (found && !zone.active) {
-          zone.active = true;
-          zonasTimers[zone.name] = setInterval(() => {
-            zone.time++;
-            updateZonasList();
-            saveZones();
-          }, 1000);
-        } else if (!found && zone.active) {
-          clearInterval(zonasTimers[zone.name]);
-          zone.active = false;
-        }
+        ctx.strokeRect(area.x, area.y, area.width, area.height);
+        ctx.font = '14px Arial';
+        ctx.fillStyle = 'lime';
+        ctx.fillText(area.name, area.x + 4, area.y + 16);
       });
     }
 
-    requestAnimationFrame(detectFrame);
-  }
+    function addArea(x, y, width, height) {
+      const name = prompt('Nome da área:');
+      if (!name) return;
+      const area = { name, x, y, width, height };
+      areas.push(area);
+      localStorage.setItem('areas', JSON.stringify(areas));
+      drawAreas();
+      createTimer(name);
+    }
 
-  async function main() {
-    model = await cocoSsd.load();
-    loadZones();
-    detectFrame();
-  }
+    function createTimer(name) {
+      const el = document.createElement('div');
+      el.className = 'timer';
+      el.id = `timer-${name}`;
+      el.textContent = `${name}: 00:00:00`;
+      timersDiv.appendChild(el);
 
-  main();
-</script>
+      let seconds = 0;
+      setInterval(() => {
+        // Simulação de detecção — substitua por lógica real de IA no futuro
+        const detect = Math.random() > 0.99; // aleatório apenas para simular
+        if (detect) seconds++;
+
+        const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+        const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+        const s = String(seconds % 60).padStart(2, '0');
+        el.textContent = `${name}: ${h}:${m}:${s}`;
+      }, 1000);
+    }
+
+    canvas.addEventListener('mousedown', e => {
+      drawing = true;
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('mouseup', e => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+      drawing = false;
+      const x = Math.min(startX, endX);
+      const y = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+      if (width > 10 && height > 10) addArea(x, y, width, height);
+    });
+
+    // Touch support
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      startX = touch.clientX - rect.left;
+      startY = touch.clientY - rect.top;
+      drawing = true;
+    });
+
+    canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.changedTouches[0];
+      const endX = touch.clientX - rect.left;
+      const endY = touch.clientY - rect.top;
+      drawing = false;
+      const x = Math.min(startX, endX);
+      const y = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+      if (width > 10 && height > 10) addArea(x, y, width, height);
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+    video.addEventListener('loadedmetadata', resizeCanvas);
+    videoFileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) {
+        video.src = URL.createObjectURL(file);
+      }
+    });
+
+    function loadVideoFromURL() {
+      const url = videoURLInput.value.trim();
+      if (url && url.endsWith('.mp4')) {
+        video.src = url;
+      } else {
+        alert('Insira uma URL direta para um vídeo .mp4');
+      }
+    }
+
+    function startCamera() {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          video.srcObject = stream;
+        })
+        .catch(err => alert('Erro ao acessar a câmera: ' + err));
+    }
+
+    // Inicializar áreas existentes
+    window.onload = () => {
+      if (video.readyState >= 1) resizeCanvas();
+      else video.addEventListener('loadedmetadata', resizeCanvas);
+      areas.forEach(area => createTimer(area.name));
+    };
+  </script>
 </body>
 </html>
