@@ -9,12 +9,13 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
     #video-container { position: relative; display: flex; flex-direction: column; align-items: center; }
-    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; z-index: 2; }
+    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; z-index: 2; cursor: crosshair; }
     #video { max-width: 100%; height: auto; z-index: 1; }
     .controls { margin-top: 10px; display: flex; flex-direction: column; align-items: center; }
     .area-label { position: absolute; background: rgba(0,0,0,0.5); color: white; padding: 2px 4px; font-size: 12px; pointer-events: none; }
     .timer { color: white; font-size: 14px; position: absolute; background: rgba(0,0,0,0.6); padding: 2px 5px; border-radius: 3px; }
     #clear-areas, #export-data { margin-top: 10px; }
+    .area-handle { fill: blue; cursor: move; }
   </style>
 </head>
 <body>
@@ -37,17 +38,14 @@
     const ctx = canvas.getContext("2d");
 
     let model;
-    let drawing = false;
-    let resizing = false;
-    let moving = false;
-    let selectedArea = null;
-    let offsetX, offsetY;
+    let isDrawing = false;
     let startX, startY;
     let areas = JSON.parse(localStorage.getItem("areas") || "[]");
 
     const resizeCanvas = () => {
       canvas.width = video.clientWidth;
       canvas.height = video.clientHeight;
+      drawAreas();
     };
 
     window.addEventListener("resize", resizeCanvas);
@@ -71,6 +69,48 @@
       });
     };
 
+    canvas.addEventListener("pointerdown", e => {
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      isDrawing = true;
+    });
+
+    canvas.addEventListener("pointermove", e => {
+      if (!isDrawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      drawAreas();
+      ctx.strokeStyle = "red";
+      ctx.strokeRect(startX, startY, mouseX - startX, mouseY - startY);
+    });
+
+    canvas.addEventListener("pointerup", e => {
+      if (!isDrawing) return;
+      isDrawing = false;
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+
+      const name = prompt("Nome da área:");
+      if (!name) return;
+
+      const newArea = {
+        name,
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        w: Math.abs(endX - startX),
+        h: Math.abs(endY - startY),
+        active: false,
+        time: 0,
+        lastStart: null
+      };
+      areas.push(newArea);
+      localStorage.setItem("areas", JSON.stringify(areas));
+      drawAreas();
+    });
+
     const clearAreas = () => {
       areas = [];
       localStorage.removeItem("areas");
@@ -85,71 +125,6 @@
       localStorage.setItem("areas", JSON.stringify(areas));
       drawAreas();
     };
-
-    canvas.addEventListener("pointerdown", e => {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      selectedArea = areas.find(a => x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h);
-
-      if (selectedArea) {
-        moving = true;
-        offsetX = x - selectedArea.x;
-        offsetY = y - selectedArea.y;
-      } else {
-        drawing = true;
-        startX = x;
-        startY = y;
-      }
-    });
-
-    canvas.addEventListener("pointermove", e => {
-      if (!drawing && !moving) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      if (moving && selectedArea) {
-        selectedArea.x = x - offsetX;
-        selectedArea.y = y - offsetY;
-        drawAreas();
-      } else if (drawing) {
-        drawAreas();
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(startX, startY, x - startX, y - startY);
-      }
-    });
-
-    canvas.addEventListener("pointerup", e => {
-      const rect = canvas.getBoundingClientRect();
-      const endX = e.clientX - rect.left;
-      const endY = e.clientY - rect.top;
-
-      if (drawing) {
-        drawing = false;
-        const name = prompt("Nome da área:");
-        if (!name) return;
-        const newArea = {
-          name,
-          x: Math.min(startX, endX),
-          y: Math.min(startY, endY),
-          w: Math.abs(startX - endX),
-          h: Math.abs(startY - endY),
-          active: false,
-          time: 0,
-          lastStart: null,
-        };
-        areas.push(newArea);
-        localStorage.setItem("areas", JSON.stringify(areas));
-        drawAreas();
-      }
-
-      if (moving) {
-        moving = false;
-        localStorage.setItem("areas", JSON.stringify(areas));
-      }
-    });
 
     document.getElementById("upload").addEventListener("change", e => {
       const file = e.target.files[0];
