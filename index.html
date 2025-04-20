@@ -7,15 +7,47 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    #video-container { position: relative; display: flex; flex-direction: column; align-items: center; }
-    #canvas { position: absolute; top: 0; left: 0; border: 2px solid transparent; touch-action: none; z-index: 2; cursor: crosshair; }
-    #video { max-width: 100%; height: auto; z-index: 1; }
-    .controls { margin-top: 10px; display: flex; flex-direction: column; align-items: center; }
-    .area-label { position: absolute; background: rgba(0,0,0,0.5); color: white; padding: 2px 4px; font-size: 12px; pointer-events: none; }
-    .timer { color: white; font-size: 14px; position: absolute; background: rgba(0,0,0,0.6); padding: 2px 5px; border-radius: 3px; }
-    #clear-areas, #export-data { margin-top: 10px; }
-    .area-handle { fill: blue; cursor: move; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+    }
+    #video-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      margin: 20px auto;
+      background: #000;
+    }
+    #video {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+    }
+    #canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      z-index: 2;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    input, button {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -24,264 +56,269 @@
     <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
     <button onclick="loadVideoFromUrl()">Carregar por URL</button>
     <button onclick="startCamera()">Usar Câmera</button>
-    <button id="clear-areas" onclick="clearAreas()">Excluir Zonas</button>
-    <button id="export-data" onclick="exportToCSV()">Exportar CSV</button>
+    <button onclick="clearAreas()">Excluir Zonas</button>
+    <button onclick="exportToCSV()">Exportar CSV</button>
     <button onclick="resetTimers()">Resetar Temporizadores</button>
   </div>
+
   <div id="video-container">
-    <video id="video" autoplay muted></video>
+    <video id="video" autoplay muted playsinline></video>
     <canvas id="canvas"></canvas>
   </div>
+
   <script>
-  const video = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-  let model;
-  let isDrawing = false;
-  let startX, startY;
-  let selectedArea = null;
-  let dragOffsetX, dragOffsetY;
-  let resizing = false;
+    let model;
+    let isDrawing = false;
+    let startX, startY;
+    let selectedArea = null;
+    let dragOffsetX, dragOffsetY;
+    let resizing = false;
 
-  let areas = JSON.parse(localStorage.getItem("areas") || "[]");
+    let areas = JSON.parse(localStorage.getItem("areas") || "[]");
 
-  const resizeCanvas = () => {
-    canvas.width = video.clientWidth;
-    canvas.height = video.clientHeight;
-    drawAreas();
-  };
-
-  window.addEventListener("resize", resizeCanvas);
-  video.addEventListener("loadeddata", resizeCanvas);
-
-  const drawAreas = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "lime";
-    ctx.lineWidth = 2;
-    ctx.font = "14px Arial";
-    ctx.textAlign = "center";
-
-    areas.forEach((area, index) => {
-      ctx.strokeRect(area.x, area.y, area.w, area.h);
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      const elapsed = area.active ? ((Date.now() - area.lastStart) / 1000 + area.time) : area.time;
-      const centerX = area.x + area.w / 2;
-      const centerY = area.y + area.h / 2;
-      ctx.fillRect(centerX - 30, centerY - 12, 60, 24);
-      ctx.fillStyle = "white";
-      ctx.fillText(`${area.name}: ${elapsed.toFixed(1)}s`, centerX, centerY + 5);
-
-      // Draw resize handle
-      ctx.fillStyle = "blue";
-      ctx.fillRect(area.x + area.w - 10, area.y + area.h - 10, 10, 10);
-    });
-  };
-
-  canvas.addEventListener("pointerdown", e => {
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    selectedArea = areas.find(area =>
-      x > area.x && x < area.x + area.w &&
-      y > area.y && y < area.y + area.h
-    );
-
-    // Detect if clicked on resize handle
-    if (selectedArea && x > selectedArea.x + selectedArea.w - 10 && y > selectedArea.y + selectedArea.h - 10) {
-      resizing = true;
-    } else if (selectedArea) {
-      dragOffsetX = x - selectedArea.x;
-      dragOffsetY = y - selectedArea.y;
-    } else {
-      // Start new area
-      startX = x;
-      startY = y;
-      isDrawing = true;
-    }
-  });
-
-  canvas.addEventListener("pointermove", e => {
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    if (resizing && selectedArea) {
-      selectedArea.w = x - selectedArea.x;
-      selectedArea.h = y - selectedArea.y;
-      localStorage.setItem("areas", JSON.stringify(areas));
+    const resizeCanvas = () => {
+      canvas.width = video.clientWidth;
+      canvas.height = video.clientHeight;
       drawAreas();
-    } else if (selectedArea && dragOffsetX !== undefined) {
-      selectedArea.x = x - dragOffsetX;
-      selectedArea.y = y - dragOffsetY;
-      localStorage.setItem("areas", JSON.stringify(areas));
-      drawAreas();
-    } else if (isDrawing) {
-      drawAreas();
-      ctx.strokeStyle = "red";
-      ctx.strokeRect(startX, startY, x - startX, y - startY);
-    }
-  });
+    };
 
-  canvas.addEventListener("pointerup", e => {
-    if (resizing || (selectedArea && dragOffsetX !== undefined)) {
-      resizing = false;
-      dragOffsetX = undefined;
-      dragOffsetY = undefined;
-      selectedArea = null;
-      return;
-    }
+    window.addEventListener("resize", resizeCanvas);
+    video.addEventListener("loadeddata", resizeCanvas);
 
-    if (isDrawing) {
+    const drawAreas = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "lime";
+      ctx.lineWidth = 2;
+      ctx.font = "14px Arial";
+      ctx.textAlign = "center";
+
+      areas.forEach((area, index) => {
+        ctx.strokeRect(area.x, area.y, area.w, area.h);
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        const elapsed = area.active ? ((Date.now() - area.lastStart) / 1000 + area.time) : area.time;
+        const centerX = area.x + area.w / 2;
+        const centerY = area.y + area.h / 2;
+        ctx.fillRect(centerX - 30, centerY - 12, 60, 24);
+        ctx.fillStyle = "white";
+        ctx.fillText(`${area.name}: ${elapsed.toFixed(1)}s`, centerX, centerY + 5);
+
+        // Draw resize handle
+        ctx.fillStyle = "blue";
+        ctx.fillRect(area.x + area.w - 10, area.y + area.h - 10, 10, 10);
+      });
+    };
+
+    canvas.addEventListener("pointerdown", e => {
       const rect = canvas.getBoundingClientRect();
-      const endX = e.clientX - rect.left;
-      const endY = e.clientY - rect.top;
-      const name = prompt("Nome da área:");
-      if (!name) {
-        isDrawing = false;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      selectedArea = areas.find(area =>
+        x > area.x && x < area.x + area.w &&
+        y > area.y && y < area.y + area.h
+      );
+
+      if (selectedArea && x > selectedArea.x + selectedArea.w - 10 && y > selectedArea.y + selectedArea.h - 10) {
+        resizing = true;
+      } else if (selectedArea) {
+        dragOffsetX = x - selectedArea.x;
+        dragOffsetY = y - selectedArea.y;
+      } else {
+        startX = x;
+        startY = y;
+        isDrawing = true;
+      }
+    });
+
+    canvas.addEventListener("pointermove", e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (resizing && selectedArea) {
+        selectedArea.w = x - selectedArea.x;
+        selectedArea.h = y - selectedArea.y;
+        localStorage.setItem("areas", JSON.stringify(areas));
+        drawAreas();
+      } else if (selectedArea && dragOffsetX !== undefined) {
+        selectedArea.x = x - dragOffsetX;
+        selectedArea.y = y - dragOffsetY;
+        localStorage.setItem("areas", JSON.stringify(areas));
+        drawAreas();
+      } else if (isDrawing) {
+        drawAreas();
+        ctx.strokeStyle = "red";
+        ctx.strokeRect(startX, startY, x - startX, y - startY);
+      }
+    });
+
+    canvas.addEventListener("pointerup", e => {
+      if (resizing || (selectedArea && dragOffsetX !== undefined)) {
+        resizing = false;
+        dragOffsetX = undefined;
+        dragOffsetY = undefined;
+        selectedArea = null;
         return;
       }
 
-      const newArea = {
-        name,
-        x: Math.min(startX, endX),
-        y: Math.min(startY, endY),
-        w: Math.abs(endX - startX),
-        h: Math.abs(endY - startY),
-        active: false,
-        time: 0,
-        lastStart: null
-      };
+      if (isDrawing) {
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        const name = prompt("Nome da área:");
+        if (!name) {
+          isDrawing = false;
+          return;
+        }
 
-      areas.push(newArea);
-      localStorage.setItem("areas", JSON.stringify(areas));
-      drawAreas();
-      isDrawing = false;
-    }
-  });
+        const newArea = {
+          name,
+          x: Math.min(startX, endX),
+          y: Math.min(startY, endY),
+          w: Math.abs(endX - startX),
+          h: Math.abs(endY - startY),
+          active: false,
+          time: 0,
+          lastStart: null
+        };
 
-  canvas.addEventListener("dblclick", e => {
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+        areas.push(newArea);
+        localStorage.setItem("areas", JSON.stringify(areas));
+        drawAreas();
+        isDrawing = false;
+      }
+    });
 
-    const area = areas.find(a => isInside(x, y, a));
-    if (area) {
-      const action = prompt("Digite 'renomear' para alterar o nome, ou 'excluir' para apagar a área.");
-      if (action === "renomear") {
-        const newName = prompt("Novo nome:");
-        if (newName) {
-          area.name = newName;
+    canvas.addEventListener("dblclick", e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const area = areas.find(a => isInside(x, y, a));
+      if (area) {
+        const action = prompt("Digite 'renomear' para alterar o nome, ou 'excluir' para apagar a área.");
+        if (action === "renomear") {
+          const newName = prompt("Novo nome:");
+          if (newName) {
+            area.name = newName;
+            localStorage.setItem("areas", JSON.stringify(areas));
+            drawAreas();
+          }
+        } else if (action === "excluir") {
+          areas = areas.filter(a => a !== area);
           localStorage.setItem("areas", JSON.stringify(areas));
           drawAreas();
         }
-      } else if (action === "excluir") {
-        areas = areas.filter(a => a !== area);
-        localStorage.setItem("areas", JSON.stringify(areas));
-        drawAreas();
       }
-    }
-  });
+    });
 
-  const isInside = (px, py, area) =>
-    px >= area.x && px <= area.x + area.w &&
-    py >= area.y && py <= area.y + area.h;
+    const isInside = (px, py, area) =>
+      px >= area.x && px <= area.x + area.w &&
+      py >= area.y && py <= area.y + area.h;
 
-  const detectPeople = async () => {
-    if (!model || video.readyState !== 4) return requestAnimationFrame(detectPeople);
-    const predictions = await model.detect(video);
-    const now = Date.now();
+    const detectPeople = async () => {
+      if (!model || video.readyState !== 4) return requestAnimationFrame(detectPeople);
+      const predictions = await model.detect(video);
+      const now = Date.now();
 
-    areas.forEach(area => {
-      const scaleX = canvas.width / video.videoWidth;
-      const scaleY = canvas.height / video.videoHeight;
+      areas.forEach(area => {
+        const scaleX = canvas.width / video.videoWidth;
+        const scaleY = canvas.height / video.videoHeight;
 
-      const someoneInside = predictions.some(p => {
-        if (p.class === "person" && p.score > 0.6) {
-          const centerX = p.bbox[0] + p.bbox[2] / 2;
-          const centerY = p.bbox[1] + p.bbox[3] / 2;
-          const sx = centerX * scaleX;
-          const sy = centerY * scaleY;
-          return isInside(sx, sy, area);
+        const someoneInside = predictions.some(p => {
+          if (p.class === "person" && p.score > 0.6) {
+            const centerX = p.bbox[0] + p.bbox[2] / 2;
+            const centerY = p.bbox[1] + p.bbox[3] / 2;
+            const sx = centerX * scaleX;
+            const sy = centerY * scaleY;
+            return isInside(sx, sy, area);
+          }
+          return false;
+        });
+
+        if (someoneInside) {
+          if (!area.active) {
+            area.active = true;
+            area.lastStart = now;
+          }
+        } else {
+          if (area.active) {
+            area.active = false;
+            area.time += (now - area.lastStart) / 1000;
+            area.lastStart = null;
+            localStorage.setItem("areas", JSON.stringify(areas));
+          }
         }
-        return false;
       });
 
-      if (someoneInside) {
-        if (!area.active) {
-          area.active = true;
-          area.lastStart = now;
-        }
-      } else {
-        if (area.active) {
-          area.active = false;
-          area.time += (now - area.lastStart) / 1000;
-          area.lastStart = null;
-          localStorage.setItem("areas", JSON.stringify(areas));
-        }
+      drawAreas();
+      requestAnimationFrame(detectPeople);
+    };
+
+    const clearAreas = () => {
+      areas = [];
+      localStorage.removeItem("areas");
+      drawAreas();
+    };
+
+    const resetTimers = () => {
+      areas.forEach(area => {
+        area.time = 0;
+        area.lastStart = area.active ? Date.now() : null;
+      });
+      localStorage.setItem("areas", JSON.stringify(areas));
+      drawAreas();
+    };
+
+    document.getElementById("upload").addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (file) {
+        const url = URL.createObjectURL(file);
+        video.srcObject = null;
+        video.src = url;
+        video.play();
       }
     });
 
-    drawAreas();
-    requestAnimationFrame(detectPeople);
-  };
+    const loadVideoFromUrl = () => {
+      const url = document.getElementById("video-url").value;
+      if (url.endsWith(".mp4")) {
+        video.srcObject = null;
+        video.src = url;
+        video.play();
+      } else {
+        alert("Somente URLs diretas de arquivos .mp4 são suportadas.");
+      }
+    };
 
-  const clearAreas = () => {
-    areas = [];
-    localStorage.removeItem("areas");
-    drawAreas();
-  };
+    const startCamera = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      video.play();
+    };
 
-  const resetTimers = () => {
-    areas.forEach(area => {
-      area.time = 0;
-      area.lastStart = area.active ? Date.now() : null;
+    const exportToCSV = () => {
+      const now = new Date().toLocaleString();
+      const csvContent = "data:text/csv;charset=utf-8,Área,Tempo (s),Data/Hora\n" +
+        areas.map(a => `${a.name},${(a.active ? ((Date.now() - a.lastStart) / 1000 + a.time) : a.time).toFixed(1)},${now}`).join("\n");
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "dados_areas.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    cocoSsd.load().then(m => {
+      model = m;
+      detectPeople();
     });
-    localStorage.setItem("areas", JSON.stringify(areas));
-    drawAreas();
-  };
-
-  document.getElementById("upload").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      video.src = url;
-    }
-  });
-
-  const loadVideoFromUrl = () => {
-    const url = document.getElementById("video-url").value;
-    if (url.endsWith(".mp4")) {
-      video.src = url;
-    } else {
-      alert("Somente URLs diretas de arquivos .mp4 são suportadas.");
-    }
-  };
-
-  const startCamera = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-  };
-
-  const exportToCSV = () => {
-    const now = new Date().toLocaleString();
-    const csvContent = "data:text/csv;charset=utf-8,Area,Tempo (s),Data/Hora\n" +
-      areas.map(a => `${a.name},${(a.active ? ((Date.now() - a.lastStart) / 1000 + a.time) : a.time).toFixed(1)},${now}`).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `tempos_areas_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  cocoSsd.load().then(m => {
-    model = m;
-    requestAnimationFrame(detectPeople);
-  });
-</script>
-
+  </script>
 </body>
 </html>
