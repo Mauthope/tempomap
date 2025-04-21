@@ -8,127 +8,106 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
-      background-color: #f0f2f5;
-      color: #333;
+      background: #f4f4f4;
     }
-
     .container {
-      max-width: 900px;
+      max-width: 800px;
       margin: auto;
       padding: 20px;
     }
-
     #video-container {
       position: relative;
       width: 100%;
       max-width: 640px;
-      height: 480px;
-      margin: 20px auto;
+      margin: 0 auto 20px;
       background: #000;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-
     #video, #canvas {
       position: absolute;
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
-
     #canvas {
+      top: 0;
+      left: 0;
       z-index: 2;
       cursor: crosshair;
       touch-action: none;
     }
 
-    .control-panel {
+    .controls-group {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       justify-content: center;
-      margin-top: 10px;
-      padding: 10px;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 10px;
     }
 
-    .control-panel input[type="file"],
-    .control-panel input[type="text"] {
-      padding: 8px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      width: 220px;
-    }
-
-    .btn {
-      padding: 8px 14px;
+    .controls input, .controls button {
+      padding: 8px 12px;
       font-size: 14px;
       border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.3s ease;
+      border-radius: 4px;
       background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .controls input[type="file"] {
+      background-color: #6c757d;
       color: white;
     }
 
-    .btn:hover {
+    .controls input[type="text"] {
+      background-color: white;
+      color: black;
+      border: 1px solid #ccc;
+    }
+
+    .controls button:hover {
       background-color: #0056b3;
     }
 
-    .btn-secondary {
-      background-color: #6c757d;
-    }
-
-    .btn-secondary:hover {
-      background-color: #495057;
-    }
-
-    .btn-danger {
-      background-color: #dc3545;
-    }
-
-    .btn-danger:hover {
-      background-color: #a71d2a;
-    }
-
-    .btn-success {
-      background-color: #28a745;
-    }
-
-    .btn-success:hover {
-      background-color: #1c7c31;
-    }
-
-    @media (max-width: 600px) {
-      .control-panel {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .control-panel input,
-      .btn {
-        width: 100%;
-      }
+    .section-title {
+      font-weight: bold;
+      margin-top: 20px;
+      text-align: center;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="control-panel">
-      <input type="file" accept="video/*" id="upload" />
-      <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
-      <button class="btn btn-success" onclick="loadVideoFromUrl()">Carregar por URL</button>
-      <button class="btn btn-secondary" onclick="startCamera()">Usar Câmera</button>
-      <button class="btn btn-danger" onclick="clearAreas()">Excluir Zonas</button>
-      <button class="btn btn-secondary" onclick="resetTimers()">Resetar Temporizadores</button>
-      <button class="btn btn-success" onclick="exportToCSV()">Exportar CSV</button>
+    <div class="controls">
+      <div class="section-title">Fonte do Vídeo</div>
+      <div class="controls-group">
+        <input type="file" accept="video/*" id="upload" />
+        <input type="text" id="video-url" placeholder="URL de vídeo (.mp4)" />
+        <button onclick="loadVideoFromUrl()">Carregar por URL</button>
+        <button onclick="startCamera()">Usar Câmera</button>
+      </div>
+
+      <div class="section-title">Controles da Área</div>
+      <div class="controls-group">
+        <button onclick="clearAreas()">Excluir Zonas</button>
+        <button onclick="resetTimers()">Resetar Temporizadores</button>
+      </div>
+
+      <div class="section-title">Exportar Dados</div>
+      <div class="controls-group">
+        <button onclick="exportToCSV()">Exportar CSV</button>
+      </div>
+
+      <div class="section-title">Controle de Mídia</div>
+      <div class="controls-group">
+        <button onclick="playVideo()">▶️ Reproduzir</button>
+        <button onclick="pauseVideo()">⏸️ Pausar</button>
+        <button onclick="restartVideo()">⏮️ Reiniciar</button>
+      </div>
     </div>
 
     <div id="video-container">
