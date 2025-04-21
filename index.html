@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,64 +8,134 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       margin: 0;
       padding: 0;
-      background: #f4f4f4;
+      background-color: #f0f2f5;
+      color: #333;
     }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+    }
+
     #video-container {
       position: relative;
-      width: 640px;
+      width: 100%;
+      max-width: 640px;
       height: 480px;
       margin: 20px auto;
       background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-    #video {
+
+    #video, #canvas {
       position: absolute;
       width: 100%;
       height: 100%;
       object-fit: cover;
-      z-index: 1;
     }
+
     #canvas {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      top: 0;
-      left: 0;
       z-index: 2;
       cursor: crosshair;
       touch-action: none;
     }
-    .controls {
-      margin-top: 10px;
+
+    .control-panel {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 5px;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 10px;
+      padding: 10px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    input, button {
-      padding: 5px 10px;
+
+    .control-panel input[type="file"],
+    .control-panel input[type="text"] {
+      padding: 8px;
       font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      width: 220px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      background-color: #007bff;
+      color: white;
+    }
+
+    .btn:hover {
+      background-color: #0056b3;
+    }
+
+    .btn-secondary {
+      background-color: #6c757d;
+    }
+
+    .btn-secondary:hover {
+      background-color: #495057;
+    }
+
+    .btn-danger {
+      background-color: #dc3545;
+    }
+
+    .btn-danger:hover {
+      background-color: #a71d2a;
+    }
+
+    .btn-success {
+      background-color: #28a745;
+    }
+
+    .btn-success:hover {
+      background-color: #1c7c31;
+    }
+
+    @media (max-width: 600px) {
+      .control-panel {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .control-panel input,
+      .btn {
+        width: 100%;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="controls">
-    <input type="file" accept="video/*" id="upload" />
-    <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
-    <button onclick="loadVideoFromUrl()">Carregar por URL</button>
-    <button onclick="startCamera()">Usar Câmera</button>
-    <button onclick="clearAreas()">Excluir Zonas</button>
-    <button onclick="exportToCSV()">Exportar CSV</button>
-    <button onclick="resetTimers()">Resetar Temporizadores</button>
-  </div>
+  <div class="container">
+    <div class="control-panel">
+      <input type="file" accept="video/*" id="upload" />
+      <input type="text" id="video-url" placeholder="URL de vídeo .mp4" />
+      <button class="btn btn-success" onclick="loadVideoFromUrl()">Carregar por URL</button>
+      <button class="btn btn-secondary" onclick="startCamera()">Usar Câmera</button>
+      <button class="btn btn-danger" onclick="clearAreas()">Excluir Zonas</button>
+      <button class="btn btn-secondary" onclick="resetTimers()">Resetar Temporizadores</button>
+      <button class="btn btn-success" onclick="exportToCSV()">Exportar CSV</button>
+    </div>
 
-  <div id="video-container">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="canvas"></canvas>
+    <div id="video-container">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
   </div>
-
   <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
