@@ -138,6 +138,20 @@
   </div>
   <script>
     const video = document.getElementById("video");
+
+    // NOVOS CONTROLES DE MÍDIA
+    function playVideo() {
+      video.play();
+    }
+
+    function pauseVideo() {
+      video.pause();
+    }
+
+    function restartVideo() {
+      video.currentTime = 0;
+    }
+    const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
 
